@@ -3,7 +3,9 @@ use axum::http::StatusCode;
 use axum::response::IntoResponse;
 use axum::Json;
 use cylindersense_core::error::AppError;
+use cylindersense_core::models::CylinderStatus;
 use cylindersense_core::payloads::TelemetryPayload;
+use cylindersense_engine::alert_rules::{generate_alert_message, should_trigger_alert};
 use cylindersense_engine::state_estimator::{
     compute_gas_remaining, smooth_raw_readings, DEFAULT_FILL_GRAMS, DEFAULT_TARE_GRAMS,
 };
@@ -11,11 +13,21 @@ use serde_json::json;
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
+fn parse_cylinder_status(s: &str) -> CylinderStatus {
+    match s {
+        "normal" => CylinderStatus::Normal,
+        "low" => CylinderStatus::Low,
+        "critical" => CylinderStatus::Critical,
+        "offline" => CylinderStatus::Offline,
+        _ => CylinderStatus::Unknown,
+    }
+}
+
 /// POST /api/v1/telemetry
 ///
 /// Validates incoming telemetry reading, persists it into the `telemetry_raw` table,
 /// triggers the state engine to recompute remaining gas and cylinder status,
-/// and updates `current_state`.
+/// detects state transitions to trigger alert events, and updates `current_state`.
 pub async fn ingest_telemetry(
     State(pool): State<PgPool>,
     Json(payload): Json<TelemetryPayload>,
@@ -60,8 +72,8 @@ pub async fn ingest_telemetry(
         "persisted raw telemetry reading"
     );
 
-    // ── State Engine Re-evaluation ─────────────────────────────────────────
-    update_derived_state(&pool, &payload.device_id, payload.timestamp).await?;
+    // ── State Engine Re-evaluation & Alerting ──────────────────────────────
+    update_derived_state_and_alert(&pool, &payload.device_id, payload.timestamp).await?;
 
     Ok((
         StatusCode::CREATED,
@@ -75,13 +87,31 @@ pub async fn ingest_telemetry(
     ))
 }
 
-/// Computes derived state for a device and updates `current_state`.
-async fn update_derived_state(
+/// Computes derived state for a device, evaluates alert transition rules,
+/// inserts alert events when triggered, and updates `current_state`.
+async fn update_derived_state_and_alert(
     pool: &PgPool,
     device_id: &str,
     timestamp: chrono::DateTime<chrono::Utc>,
 ) -> Result<(), AppError> {
-    // 1. Fetch active refill record (if any)
+    // 1. Query current state to get previous_status before overwriting
+    let prev_state_row = sqlx::query(
+        r#"
+        SELECT status
+        FROM current_state
+        WHERE device_id = $1
+        "#,
+    )
+    .bind(device_id)
+    .fetch_optional(pool)
+    .await?;
+
+    let previous_status = match prev_state_row {
+        Some(row) => parse_cylinder_status(row.get::<&str, _>("status")),
+        None => CylinderStatus::Unknown,
+    };
+
+    // 2. Fetch active refill record (if any)
     let refill_row = sqlx::query(
         r#"
         SELECT id, fill_amount_grams
@@ -104,7 +134,7 @@ async fn update_derived_state(
         None => (None, DEFAULT_FILL_GRAMS, DEFAULT_TARE_GRAMS),
     };
 
-    // 2. Fetch recent raw telemetry readings for smoothing (last 10)
+    // 3. Fetch recent raw telemetry readings for smoothing (last 10)
     let rows = sqlx::query(
         r#"
         SELECT raw_load_grams
@@ -120,12 +150,42 @@ async fn update_derived_state(
 
     let readings: Vec<i32> = rows.iter().map(|r| r.get("raw_load_grams")).collect();
 
-    // 3. Smooth raw load cell readings and compute derived gas state
+    // 4. Smooth raw load cell readings and compute derived gas state
     let smoothed_load = smooth_raw_readings(&readings, tare_grams, fill_amount_grams);
-    let (remaining_grams, status) =
+    let (remaining_grams, new_status) =
         compute_gas_remaining(smoothed_load, tare_grams, fill_amount_grams);
 
-    // 4. Upsert into current_state
+    // 5. Evaluate alert transition rules (Deduplication: triggers ONLY on new transition)
+    if should_trigger_alert(previous_status, new_status) {
+        let alert_id = Uuid::new_v4();
+        let message = generate_alert_message(device_id, previous_status, new_status);
+
+        sqlx::query(
+            r#"
+            INSERT INTO alert_events (id, device_id, state_from, state_to, triggered_at, message)
+            VALUES ($1, $2, $3, $4, $5, $6)
+            "#,
+        )
+        .bind(alert_id)
+        .bind(device_id)
+        .bind(previous_status.to_string())
+        .bind(new_status.to_string())
+        .bind(timestamp)
+        .bind(&message)
+        .execute(pool)
+        .await?;
+
+        tracing::warn!(
+            id = %alert_id,
+            device_id = %device_id,
+            from = %previous_status,
+            to = %new_status,
+            message = %message,
+            "ALERT EVENT TRIGGERED"
+        );
+    }
+
+    // 6. Upsert into current_state
     sqlx::query(
         r#"
         INSERT INTO current_state (device_id, remaining_grams, status, last_seen_at, active_refill_id, updated_at)
@@ -140,7 +200,7 @@ async fn update_derived_state(
     )
     .bind(device_id)
     .bind(remaining_grams)
-    .bind(status.to_string())
+    .bind(new_status.to_string())
     .bind(timestamp)
     .bind(active_refill_id)
     .execute(pool)
@@ -149,7 +209,7 @@ async fn update_derived_state(
     tracing::info!(
         device_id = %device_id,
         remaining_grams = remaining_grams,
-        status = %status,
+        status = %new_status,
         "updated derived current state"
     );
 

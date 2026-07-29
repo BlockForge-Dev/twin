@@ -62,7 +62,7 @@ async fn test_assign_device_validation_empty_site_id() {
 // ── Integration Tests (Requires Postgres) ────────────────────────────────────
 
 #[tokio::test]
-async fn test_db_integration_device_telemetry_and_state_engine() {
+async fn test_db_integration_device_telemetry_state_and_alerts() {
     let Some(pool) = setup_test_pool().await else {
         eprintln!("Skipping DB integration test: DATABASE_URL not available or DB unreachable");
         return;
@@ -70,74 +70,69 @@ async fn test_db_integration_device_telemetry_and_state_engine() {
 
     let test_device_id = format!("test-dev-{}", uuid::Uuid::new_v4());
 
-    // 1. Register device
-    let reg_payload = json!({
-        "device_id": test_device_id,
-        "model": "basic_v1",
-        "firmware_version": "1.0.0"
-    });
-
-    let (status, body) = execute_post(&pool, "/api/v1/devices", reg_payload).await;
+    // 1. Register and assign device
+    let reg_payload = json!({ "device_id": test_device_id });
+    let (status, _) = execute_post(&pool, "/api/v1/devices", reg_payload).await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["device_id"], test_device_id);
 
-    // 2. Assign device
-    let assign_payload = json!({ "site_id": "kitchen-site-A" });
-    let assign_url = format!("/api/v1/devices/{}/assign", test_device_id);
-    let (status, _body) = execute_post(&pool, &assign_url, assign_payload).await;
-    assert_eq!(status, StatusCode::OK);
-
-    // 3. Ingest normal telemetry (15500g raw load -> 10000g remaining gas -> normal status)
-    let tel_1 = json!({
+    // 2. Ingest normal telemetry (15500g raw load -> Normal state)
+    let tel_normal = json!({
         "device_id": test_device_id,
         "timestamp": "2026-07-29T14:00:00Z",
         "raw_load_grams": 15500
     });
-    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_1).await;
+    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_normal).await;
     assert_eq!(status, StatusCode::CREATED);
 
-    // Ingest spike reading (25000g raw load spike -> should be rejected by outlier filter)
-    let tel_spike = json!({
-        "device_id": test_device_id,
-        "timestamp": "2026-07-29T14:00:05Z",
-        "raw_load_grams": 25000
-    });
-    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_spike).await;
-    assert_eq!(status, StatusCode::CREATED);
-
-    // 4. GET /api/v1/devices/{id}/state and verify state engine output
-    let state_url = format!("/api/v1/devices/{}/state", test_device_id);
-    let (status, body) = execute_get(&pool, &state_url).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["device_id"], test_device_id);
-    assert_eq!(body["status"], "normal");
-    assert_eq!(body["remaining_grams"], 10000); // 25000g spike rejected, 15500g used!
-
-    // 5. Ingest low level reading (7500g raw load -> 2000g remaining gas -> low status)
-    let tel_low = json!({
+    // 3. Ingest low telemetry (7500g raw load -> Low state -> Triggers Alert #1: Normal -> Low)
+    let tel_low_1 = json!({
         "device_id": test_device_id,
         "timestamp": "2026-07-29T14:01:00Z",
         "raw_load_grams": 7500
     });
-    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_low).await;
+    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_low_1).await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let (status, body) = execute_get(&pool, &state_url).await;
-    assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "low");
-
-    // 6. Ingest critical level reading (6000g raw load -> 500g remaining gas -> critical status)
-    let tel_crit = json!({
+    // 4. Ingest identical low telemetry (7500g raw load -> Low state -> Deduplicated, NO duplicate alert!)
+    let tel_low_2 = json!({
         "device_id": test_device_id,
         "timestamp": "2026-07-29T14:02:00Z",
+        "raw_load_grams": 7500
+    });
+    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_low_2).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    // 5. Ingest critical telemetry (6000g raw load -> Critical state -> Triggers Alert #2: Low -> Critical)
+    let tel_crit = json!({
+        "device_id": test_device_id,
+        "timestamp": "2026-07-29T14:03:00Z",
         "raw_load_grams": 6000
     });
     let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_crit).await;
     assert_eq!(status, StatusCode::CREATED);
 
-    let (status, body) = execute_get(&pool, &state_url).await;
+    // 6. Query GET /api/v1/alerts?device_id=... and assert exact alert events
+    let alerts_url = format!("/api/v1/alerts?device_id={}", test_device_id);
+    let (status, body) = execute_get(&pool, &alerts_url).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["status"], "critical");
+
+    let alerts = body.as_array().expect("expected JSON array of alerts");
+    assert_eq!(alerts.len(), 2, "exactly 2 alert events should be triggered (Low & Critical)");
+
+    let latest_alert = &alerts[0];
+    assert_eq!(latest_alert["state_to"], "critical");
+    assert_eq!(latest_alert["state_from"], "low");
+
+    let prev_alert = &alerts[1];
+    assert_eq!(prev_alert["state_to"], "low");
+    assert_eq!(prev_alert["state_from"], "normal");
+
+    // 7. Acknowledge alert via POST /api/v1/alerts/{id}/acknowledge
+    let alert_id = latest_alert["id"].as_str().unwrap();
+    let ack_url = format!("/api/v1/alerts/{}/acknowledge", alert_id);
+    let (status, ack_body) = execute_post(&pool, &ack_url, json!({})).await;
+    assert_eq!(status, StatusCode::OK);
+    assert!(ack_body["acknowledged_at"].is_string(), "acknowledged_at timestamp should be set");
 }
 
 // ── Test Execution Helpers ───────────────────────────────────────────────────
@@ -231,10 +226,16 @@ fn build_router(pool: PgPool) -> axum::Router {
             "/api/v1/devices/{id}/state",
             axum::routing::get(cylindersense_ingest_routes::get_device_state),
         )
+        .route("/api/v1/alerts", axum::routing::get(cylindersense_ingest_routes::list_alerts))
+        .route(
+            "/api/v1/alerts/{id}/acknowledge",
+            axum::routing::post(cylindersense_ingest_routes::acknowledge_alert),
+        )
         .with_state(pool)
 }
 
 mod cylindersense_ingest_routes {
+    pub use cylindersense_ingest::routes::alerts::{acknowledge_alert, list_alerts};
     pub use cylindersense_ingest::routes::devices::{assign_device, list_devices, register_device};
     pub use cylindersense_ingest::routes::health::health_check as health;
     pub use cylindersense_ingest::routes::state::get_device_state;

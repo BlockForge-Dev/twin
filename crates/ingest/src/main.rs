@@ -53,6 +53,11 @@ async fn main() {
             "/api/v1/devices/{id}/state",
             get(routes::state::get_device_state),
         )
+        .route("/api/v1/alerts", get(routes::alerts::list_alerts))
+        .route(
+            "/api/v1/alerts/{id}/acknowledge",
+            post(routes::alerts::acknowledge_alert),
+        )
         .with_state(pool);
 
     // ── Server ───────────────────────────────────────────────────────

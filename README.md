@@ -11,7 +11,7 @@ backend service (Rust/Axum + PostgreSQL), and a thin app interface. The
 backend is the brain: it ingests telemetry, estimates remaining gas, and
 triggers low/critical alerts.
 
-> **Current status**: Milestone 3 — State Engine complete (`compute_gas_remaining` pure estimation, outlier rejection & simple moving average smoothing, auto-updating `current_state` persistence, `GET /api/v1/devices/{id}/state` endpoint, 11 tests passing).
+> **Current status**: Milestone 4 — Alerting Engine complete (transition rule matching, alert message generation, deduplicated `alert_events` persistence on state transitions, `GET /api/v1/alerts` and `POST /api/v1/alerts/{id}/acknowledge` endpoints, 18 tests passing).
 
 ## Architecture
 
