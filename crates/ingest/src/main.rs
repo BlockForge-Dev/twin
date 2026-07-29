@@ -1,4 +1,4 @@
-use axum::routing::{get, post};
+use axum::routing::{get, post, put};
 use axum::Router;
 use cylindersense_ingest::config::AppConfig;
 use cylindersense_ingest::db;
@@ -50,8 +50,24 @@ async fn main() {
             post(routes::devices::assign_device),
         )
         .route(
+            "/api/v1/devices/{id}/reassign",
+            post(routes::devices::reassign_device),
+        )
+        .route(
             "/api/v1/devices/{id}/state",
             get(routes::state::get_device_state),
+        )
+        .route(
+            "/api/v1/devices/{id}/refill",
+            post(routes::refills::create_refill),
+        )
+        .route(
+            "/api/v1/devices/{id}/refills",
+            get(routes::refills::list_device_refills),
+        )
+        .route(
+            "/api/v1/refills/{id}",
+            put(routes::refills::update_refill),
         )
         .route("/api/v1/alerts", get(routes::alerts::list_alerts))
         .route(

@@ -89,7 +89,7 @@ pub async fn ingest_telemetry(
 
 /// Computes derived state for a device, evaluates alert transition rules,
 /// inserts alert events when triggered, and updates `current_state`.
-async fn update_derived_state_and_alert(
+pub async fn update_derived_state_and_alert(
     pool: &PgPool,
     device_id: &str,
     timestamp: chrono::DateTime<chrono::Utc>,

@@ -4,9 +4,11 @@ use axum::response::IntoResponse;
 use axum::Json;
 use cylindersense_core::error::AppError;
 use cylindersense_core::models::{Device, DeviceStatus};
-use cylindersense_core::payloads::{AssignDevicePayload, RegisterDevicePayload};
+use cylindersense_core::payloads::{AssignDevicePayload, ReassignDevicePayload, RegisterDevicePayload};
 use sqlx::PgPool;
 use uuid::Uuid;
+
+use crate::routes::telemetry::update_derived_state_and_alert;
 
 #[derive(Debug, sqlx::FromRow)]
 struct DeviceRow {
@@ -111,10 +113,10 @@ pub async fn list_devices(
     Ok((StatusCode::OK, Json(devices)))
 }
 
-/// POST /api/v1/devices/:id/assign
+/// POST /api/v1/devices/{id}/assign
 ///
 /// Assigns a device to a site/location and updates its status to active.
-/// `:id` can be either the hardware device_id string or internal UUID string.
+/// `{id}` can be either the hardware device_id string or internal UUID string.
 pub async fn assign_device(
     State(pool): State<PgPool>,
     Path(id_param): Path<String>,
@@ -157,6 +159,60 @@ pub async fn assign_device(
                 site_id = %trimmed_site,
                 "assigned device to site"
             );
+
+            Ok((StatusCode::OK, Json(device)))
+        }
+        None => Err(AppError::NotFound(format!(
+            "device not found: {}",
+            id_param
+        ))),
+    }
+}
+
+/// POST /api/v1/devices/{id}/reassign
+///
+/// Reassigns device site/cylinder context and triggers state recomputation.
+pub async fn reassign_device(
+    State(pool): State<PgPool>,
+    Path(id_param): Path<String>,
+    Json(payload): Json<ReassignDevicePayload>,
+) -> Result<impl IntoResponse, AppError> {
+    let trimmed_id = id_param.trim();
+    let parsed_uuid = Uuid::parse_str(trimmed_id).ok();
+    let now = chrono::Utc::now();
+    let active_status = DeviceStatus::Active.to_string();
+
+    let record = sqlx::query_as::<_, DeviceRow>(
+        r#"
+        UPDATE devices
+        SET site_id = COALESCE($1, site_id),
+            status = $2,
+            updated_at = $3
+        WHERE device_id = $4 OR id = $5
+        RETURNING id, device_id, model, firmware_version, status, site_id, created_at, updated_at
+        "#,
+    )
+    .bind(&payload.site_id)
+    .bind(active_status)
+    .bind(now)
+    .bind(trimmed_id)
+    .bind(parsed_uuid)
+    .fetch_optional(&pool)
+    .await?;
+
+    match record {
+        Some(r) => {
+            let device: Device = r.into();
+
+            tracing::info!(
+                device_id = %device.device_id,
+                site_id = ?payload.site_id,
+                edited_by = ?payload.edited_by,
+                "reassigned device context — recalculating state"
+            );
+
+            // Trigger state recomputation
+            update_derived_state_and_alert(&pool, &device.device_id, now).await?;
 
             Ok((StatusCode::OK, Json(device)))
         }
