@@ -11,8 +11,7 @@ backend service (Rust/Axum + PostgreSQL), and a thin app interface. The
 backend is the brain: it ingests telemetry, estimates remaining gas, and
 triggers low/critical alerts.
 
-> **Current status**: Milestone 0 — Domain model frozen, project skeleton
-> built, health endpoint live.
+> **Current status**: Milestone 2 — Ingestion pipeline live (POST /telemetry validation & persistence), Device Registry endpoints active (POST/GET /devices, POST /devices/{id}/assign), tests passing.
 
 ## Architecture
 

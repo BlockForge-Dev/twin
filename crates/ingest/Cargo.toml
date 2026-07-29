@@ -4,6 +4,15 @@ version = "0.1.0"
 edition = "2021"
 description = "Axum HTTP service for CylinderSense telemetry ingestion"
 
+[lib]
+name = "cylindersense_ingest"
+path = "src/lib.rs"
+
+[[bin]]
+name = "cylindersense-ingest"
+path = "src/main.rs"
+
+
 [dependencies]
 cylindersense-core = { path = "../core" }
 axum = { workspace = true }
@@ -15,3 +24,9 @@ chrono = { workspace = true }
 uuid = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
+
+[dev-dependencies]
+tower = { version = "0.5", features = ["util"] }
+http-body-util = "0.1"
+
+

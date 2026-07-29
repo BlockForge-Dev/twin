@@ -1,9 +1,8 @@
-mod config;
-mod db;
-mod routes;
-
-use axum::Router;
 use axum::routing::{get, post};
+use axum::Router;
+use cylindersense_ingest::config::AppConfig;
+use cylindersense_ingest::db;
+use cylindersense_ingest::routes;
 use sqlx::migrate::Migrator;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;
@@ -19,7 +18,7 @@ async fn main() {
         .init();
 
     // ── Configuration ────────────────────────────────────────────────
-    let config = config::AppConfig::from_env().expect("failed to load config from environment");
+    let config = AppConfig::from_env().expect("failed to load config from environment");
     tracing::info!(host = %config.host, port = %config.port, "starting CylinderSense ingest service");
 
     // ── Database ─────────────────────────────────────────────────────
@@ -41,7 +40,16 @@ async fn main() {
     // ── Router ───────────────────────────────────────────────────────
     let app = Router::new()
         .route("/health", get(routes::health::health_check))
-        .route("/api/v1/telemetry", post(routes::telemetry::ingest_telemetry));
+        .route("/api/v1/telemetry", post(routes::telemetry::ingest_telemetry))
+        .route(
+            "/api/v1/devices",
+            post(routes::devices::register_device).get(routes::devices::list_devices),
+        )
+        .route(
+            "/api/v1/devices/{id}/assign",
+            post(routes::devices::assign_device),
+        )
+        .with_state(pool);
 
     // ── Server ───────────────────────────────────────────────────────
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))

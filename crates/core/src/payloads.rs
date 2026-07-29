@@ -15,3 +15,21 @@ pub struct TelemetryPayload {
     /// Raw load cell reading in grams.
     pub raw_load_grams: i32,
 }
+
+/// Payload to register a new physical device in the system.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RegisterDevicePayload {
+    /// Hardware-stamped unique identity string (e.g. MAC address or serial number).
+    pub device_id: String,
+    /// Optional hardware model (e.g. "basic_v1").
+    pub model: Option<String>,
+    /// Optional initial firmware version string.
+    pub firmware_version: Option<String>,
+}
+
+/// Payload to assign a device to a site/location.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssignDevicePayload {
+    /// Site or location ID to assign the device to.
+    pub site_id: String,
+}
