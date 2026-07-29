@@ -114,7 +114,7 @@ pub async fn update_derived_state_and_alert(
     // 2. Fetch active refill record (if any)
     let refill_row = sqlx::query(
         r#"
-        SELECT id, fill_amount_grams
+        SELECT id, fill_amount_grams, refill_date
         FROM refill_records
         WHERE device_id = $1
         ORDER BY refill_date DESC
@@ -125,35 +125,64 @@ pub async fn update_derived_state_and_alert(
     .fetch_optional(pool)
     .await?;
 
-    let (active_refill_id, fill_amount_grams, tare_grams) = match refill_row {
+    let (active_refill_id, fill_amount_grams, tare_grams, refill_date) = match refill_row {
         Some(row) => (
             Some(row.get::<Uuid, _>("id")),
             row.get::<i32, _>("fill_amount_grams"),
             DEFAULT_TARE_GRAMS,
+            Some(row.get::<chrono::DateTime<chrono::Utc>, _>("refill_date")),
         ),
-        None => (None, DEFAULT_FILL_GRAMS, DEFAULT_TARE_GRAMS),
+        None => (None, DEFAULT_FILL_GRAMS, DEFAULT_TARE_GRAMS, None),
     };
 
-    // 3. Fetch recent raw telemetry readings for smoothing (last 10)
-    let rows = sqlx::query(
-        r#"
-        SELECT raw_load_grams
-        FROM telemetry_raw
-        WHERE device_id = $1
-        ORDER BY timestamp DESC
-        LIMIT 10
-        "#,
-    )
-    .bind(device_id)
-    .fetch_all(pool)
-    .await?;
+    // 3. Fetch recent raw telemetry readings for the CURRENT refill cycle (last 10)
+    let rows = if let Some(refill_time) = refill_date {
+        sqlx::query(
+            r#"
+            SELECT raw_load_grams
+            FROM telemetry_raw
+            WHERE device_id = $1 AND timestamp >= $2
+            ORDER BY timestamp DESC
+            LIMIT 10
+            "#,
+        )
+        .bind(device_id)
+        .bind(refill_time)
+        .fetch_all(pool)
+        .await?
+    } else {
+        sqlx::query(
+            r#"
+            SELECT raw_load_grams
+            FROM telemetry_raw
+            WHERE device_id = $1
+            ORDER BY timestamp DESC
+            LIMIT 10
+            "#,
+        )
+        .bind(device_id)
+        .fetch_all(pool)
+        .await?
+    };
 
     let readings: Vec<i32> = rows.iter().map(|r| r.get("raw_load_grams")).collect();
 
     // 4. Smooth raw load cell readings and compute derived gas state
-    let smoothed_load = smooth_raw_readings(&readings, tare_grams, fill_amount_grams);
-    let (remaining_grams, new_status) =
-        compute_gas_remaining(smoothed_load, tare_grams, fill_amount_grams);
+    let (remaining_grams, new_status) = if readings.is_empty() {
+        // No telemetry received in current refill cycle yet — anchor at full fill amount
+        let ratio = 1.0;
+        let status = if ratio <= 0.05 {
+            CylinderStatus::Critical
+        } else if ratio <= 0.20 {
+            CylinderStatus::Low
+        } else {
+            CylinderStatus::Normal
+        };
+        (fill_amount_grams, status)
+    } else {
+        let smoothed_load = smooth_raw_readings(&readings, tare_grams, fill_amount_grams);
+        compute_gas_remaining(smoothed_load, tare_grams, fill_amount_grams)
+    };
 
     // 5. Evaluate alert transition rules (Deduplication: triggers ONLY on new transition)
     if should_trigger_alert(previous_status, new_status) {
