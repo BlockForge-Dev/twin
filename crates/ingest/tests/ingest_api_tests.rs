@@ -32,7 +32,10 @@ async fn test_telemetry_validation_empty_device_id() {
 
     let (status, body) = emulate_telemetry_request(payload).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["error"].as_str().unwrap().contains("device_id cannot be empty"));
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("device_id cannot be empty"));
 }
 
 #[tokio::test]
@@ -45,7 +48,10 @@ async fn test_telemetry_validation_negative_load() {
 
     let (status, body) = emulate_telemetry_request(payload).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["error"].as_str().unwrap().contains("must be non-negative"));
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("must be non-negative"));
 }
 
 #[tokio::test]
@@ -56,13 +62,19 @@ async fn test_assign_device_validation_empty_site_id() {
 
     let (status, body) = emulate_assign_request("nonexistent-device", payload).await;
     assert_eq!(status, StatusCode::BAD_REQUEST);
-    assert!(body["error"].as_str().unwrap().contains("site_id cannot be empty"));
+    assert!(body["error"]
+        .as_str()
+        .unwrap()
+        .contains("site_id cannot be empty"));
 }
 
 #[tokio::test]
 async fn test_health_check_endpoint() {
-    let pool = dummy_pool().await;
-    let app = build_router(pool);
+    let app = if let Some(pool) = setup_test_pool().await {
+        build_router(pool)
+    } else {
+        build_router(dummy_pool().await)
+    };
 
     let req = Request::builder()
         .method("GET")
@@ -71,9 +83,18 @@ async fn test_health_check_endpoint() {
         .unwrap();
 
     let response = app.oneshot(req).await.unwrap();
-    assert_eq!(response.status(), StatusCode::OK);
-}
+    let status = response.status();
+    let body_bytes = response.into_body().collect().await.unwrap().to_bytes();
+    let body_json: Value = serde_json::from_slice(&body_bytes).unwrap_or(json!({}));
 
+    if status == StatusCode::OK {
+        assert_eq!(body_json["status"], "healthy");
+        assert_eq!(body_json["database"], "connected");
+    } else {
+        assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
+        assert_eq!(body_json["status"], "unhealthy");
+    }
+}
 
 // ── Integration Tests (Requires Postgres) ────────────────────────────────────
 
@@ -266,11 +287,18 @@ async fn dummy_pool() -> PgPool {
 
 fn build_router(pool: PgPool) -> axum::Router {
     axum::Router::new()
-        .route("/health", axum::routing::get(cylindersense_ingest_routes::health))
-        .route("/api/v1/telemetry", axum::routing::post(cylindersense_ingest_routes::telemetry))
+        .route(
+            "/health",
+            axum::routing::get(cylindersense_ingest_routes::health),
+        )
+        .route(
+            "/api/v1/telemetry",
+            axum::routing::post(cylindersense_ingest_routes::telemetry),
+        )
         .route(
             "/api/v1/devices",
-            axum::routing::post(cylindersense_ingest_routes::register_device).get(cylindersense_ingest_routes::list_devices),
+            axum::routing::post(cylindersense_ingest_routes::register_device)
+                .get(cylindersense_ingest_routes::list_devices),
         )
         .route(
             "/api/v1/devices/{id}/assign",
@@ -296,7 +324,10 @@ fn build_router(pool: PgPool) -> axum::Router {
             "/api/v1/refills/{id}",
             axum::routing::put(cylindersense_ingest_routes::update_refill),
         )
-        .route("/api/v1/alerts", axum::routing::get(cylindersense_ingest_routes::list_alerts))
+        .route(
+            "/api/v1/alerts",
+            axum::routing::get(cylindersense_ingest_routes::list_alerts),
+        )
         .route(
             "/api/v1/alerts/{id}/acknowledge",
             axum::routing::post(cylindersense_ingest_routes::acknowledge_alert),
@@ -307,9 +338,13 @@ fn build_router(pool: PgPool) -> axum::Router {
 
 mod cylindersense_ingest_routes {
     pub use cylindersense_ingest::routes::alerts::{acknowledge_alert, list_alerts};
-    pub use cylindersense_ingest::routes::devices::{assign_device, list_devices, reassign_device, register_device};
+    pub use cylindersense_ingest::routes::devices::{
+        assign_device, list_devices, reassign_device, register_device,
+    };
     pub use cylindersense_ingest::routes::health::health_check as health;
-    pub use cylindersense_ingest::routes::refills::{create_refill, list_device_refills, update_refill};
+    pub use cylindersense_ingest::routes::refills::{
+        create_refill, list_device_refills, update_refill,
+    };
     pub use cylindersense_ingest::routes::state::get_device_state;
     pub use cylindersense_ingest::routes::telemetry::ingest_telemetry as telemetry;
 }

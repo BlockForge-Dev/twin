@@ -1,124 +1,114 @@
-# CylinderSense
+# CylinderSense (twin)
 
-**Smart LPG depletion monitoring for commercial operators.**
+> **Commercial LPG Depletion & State Estimation Infrastructure**
 
-CylinderSense is a connected monitoring system that tells commercial kitchens,
-restaurants, and other LPG-dependent businesses how much gas remains in their
-active cylinder — before operations are disrupted.
+CylinderSense is a Rust-based commercial LPG cylinder monitoring platform.
+Physical sensors attached to load cells stream continuous telemetry to the ingest service.
+The backend applies outlier rejection, smoothing, and domain rules to estimate remaining gas, detect refills, and generate real-time alerts.
 
-The system consists of a hardware sensing device (ESP32 + load cell), a
-backend service (Rust/Axum + PostgreSQL), and a thin app interface. The
-backend is the brain: it ingests telemetry, estimates remaining gas, and
-triggers low/critical alerts.
+> **Current status**: Milestone 7 — Production Hardening & Documentation complete (Externalized config defaults, DB health check probes, HTTP request tracing, structured JSON/text logging, GitHub Actions CI pipeline, `CONTRIBUTING.md`, `PILOT_RUNBOOK.md`, 19 tests passing).
 
-> **Current status**: Milestone 6 — Web Dashboard complete (Responsive HTML/CSS/JS web application served directly at `http://localhost:3000`, live cylinder list with big numerical remaining kg and color-coded status badges, modal detail view with refill form & audit history, alert feed with one-click acknowledgement, device registration, and 5s auto-polling, 19 tests passing).
+---
 
-## Architecture
+## ⚡ 10-Minute Quickstart
 
-See [DESIGN.md](DESIGN.md) for the full architecture overview, data model
-diagram, design decisions, and v1 non-goals.
+Get the entire CylinderSense stack running locally in 3 steps:
 
-## Project Structure
-
-```
-twin/
-├── Cargo.toml                  # Workspace root
-├── DESIGN.md                   # Architecture & design decisions
-├── docker-compose.yml          # Local Postgres for development
-├── .env.example                # Environment variable template
-├── crates/
-│   ├── core/                   # Shared domain types (no I/O)
-│   │   └── src/
-│   │       ├── models.rs       # Device, TelemetryRaw, RefillRecord, CurrentState, AlertEvent
-│   │       ├── payloads.rs     # TelemetryPayload (device→backend contract)
-│   │       └── error.rs        # AppError enum
-│   ├── ingest/                 # Axum HTTP service
-│   │   ├── src/
-│   │   │   ├── main.rs         # Server entrypoint
-│   │   │   ├── config.rs       # AppConfig (env-based)
-│   │   │   ├── routes/         # HTTP handlers
-│   │   │   └── db/             # Database pool setup
-│   │   └── migrations/         # SQL migration files (5 tables)
-│   ├── engine/                 # State estimation & alert rules (stub)
-│   └── simulator/              # Device telemetry simulator (stub)
-└── web/                        # Future UI app
-```
-
-## Prerequisites
-
-- [Rust](https://rustup.rs/) (stable toolchain)
-- [Docker](https://docs.docker.com/get-docker/) and Docker Compose
-- [sqlx-cli](https://crates.io/crates/sqlx-cli) (optional, for manual migration commands)
-
-  ```bash
-  cargo install sqlx-cli --no-default-features --features postgres
-  ```
-
-## Setup
-
-### 1. Start PostgreSQL
-
+### Step 1: Start PostgreSQL
 ```bash
 docker compose up -d
 ```
 
-This starts a Postgres 16 instance on `localhost:5432` with database
-`cylindersense`, user `cs_dev`, password `cs_dev_pass`.
-
-### 2. Set Environment Variables
-
-Copy the example env file and adjust if needed:
-
-```bash
-cp .env.example .env
-```
-
-Or export directly:
-
-```bash
-export DATABASE_URL=postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense
-```
-
-On PowerShell:
-
-```powershell
-$env:DATABASE_URL = "postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense"
-```
-
-### 3. Build the Workspace
-
-```bash
-cargo build --workspace
-```
-
-### 4. Run the Ingest Service
-
+### Step 2: Start Backend Service
 ```bash
 cargo run -p cylindersense-ingest
 ```
+> The backend server will automatically apply database migrations and start listening at `http://localhost:3000`.
 
-The server starts on `http://localhost:3000`. Database migrations run
-automatically on startup.
-
-### 5. Verify
-
+### Step 3: Run Device Simulator
+In a separate terminal:
 ```bash
-curl http://localhost:3000/health
-# → {"status":"ok"}
+cargo run -p cylindersense-simulator
+```
+> The simulator will stream realistic gas depletion telemetry (with noise, spikes, and auto-refills) to the backend.
+
+### Open Web Dashboard
+Open **`http://localhost:3000`** in your browser to view live cylinder gas levels, alert feeds, and record refills!
+
+---
+
+## 🏗️ Workspace Architecture
+
+```text
+c:\Users\hp\twin
+├── Cargo.toml                # Workspace manifest
+├── docker-compose.yml        # PostgreSQL container setup
+├── DESIGN.md                 # System architecture design & domain model diagram
+├── CONTRIBUTING.md           # Developer guidelines & code standards
+├── PILOT_RUNBOOK.md          # Pilot deployment, onboarding & backup procedures
+├── .github/workflows/ci.yml  # GitHub Actions CI pipeline
+├── web/                      # Responsive HTML5/CSS3/JS Web Dashboard
+└── crates/
+    ├── core/                 # Shared domain models (Device, TelemetryRaw, CurrentState, AlertEvent)
+    ├── engine/               # Pure state estimator (compute_gas_remaining, smoothing, alert rules)
+    ├── ingest/               # Axum HTTP ingestion server, REST APIs, SQL migrations, static web serving
+    └── simulator/            # Synthetic LPG telemetry simulator CLI
 ```
 
-## Database Tables
+---
 
-The following tables are created by the migrations:
+## 🔌 API Endpoints Summary
 
-| Table | Purpose |
-|-------|---------|
-| `devices` | Registered physical monitoring units |
-| `telemetry_raw` | Append-only raw sensor readings |
-| `refill_records` | Refill context per depletion cycle |
-| `current_state` | Derived operational state (one row per device) |
-| `alert_events` | Notification-worthy state transitions |
+| Method | Endpoint | Description |
+| :--- | :--- | :--- |
+| `GET` | `/health` | Liveness & PostgreSQL connectivity health probe |
+| `POST` | `/api/v1/telemetry` | Ingest raw telemetry, smooth load, recompute state & alerts |
+| `POST` | `/api/v1/devices` | Register new physical monitoring device |
+| `GET` | `/api/v1/devices` | List registered devices |
+| `POST` | `/api/v1/devices/{id}/assign` | Assign device to a site/location |
+| `POST` | `/api/v1/devices/{id}/reassign` | Reassign site/cylinder context |
+| `GET` | `/api/v1/devices/{id}/state` | Get latest derived operational state |
+| `POST` | `/api/v1/devices/{id}/refill` | Record cylinder refill (gas level jumps to full) |
+| `PUT` | `/api/v1/refills/{id}` | Edit refill record (audited) & recalculate state |
+| `GET` | `/api/v1/devices/{id}/refills` | Query refill audit history |
+| `GET` | `/api/v1/alerts` | Get system alert events (optional `?device_id=`) |
+| `POST` | `/api/v1/alerts/{id}/acknowledge` | Mark alert event as acknowledged |
 
-## License
+---
 
-Proprietary. All rights reserved.
+## ⚙️ Environment Configuration
+
+Configuration is externalized with sensible defaults:
+
+| Environment Variable | Default Value | Description |
+| :--- | :--- | :--- |
+| `DATABASE_URL` | `postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense` | PostgreSQL connection URL |
+| `HOST` | `0.0.0.0` | Host interface to bind server |
+| `PORT` | `3000` | HTTP port |
+| `LOG_LEVEL` | `info` | Tracing log filter (`info`, `debug`, `trace`) |
+| `LOG_FORMAT` | `text` | Logging output format (`text` or `json`) |
+
+---
+
+## 🧪 Testing & Quality Assurance
+
+Run code format, linting, and workspace test suite:
+
+```bash
+# Check formatting
+cargo fmt --check
+
+# Run linter
+cargo clippy --workspace -- -D warnings
+
+# Run all tests
+cargo test --workspace
+```
+
+---
+
+## 📖 Documentation Links
+
+- [System Architecture (DESIGN.md)](file:///c:/Users/hp/twin/DESIGN.md)
+- [Contributing Guidelines (CONTRIBUTING.md)](file:///c:/Users/hp/twin/CONTRIBUTING.md)
+- [Pilot Deployment Runbook (PILOT_RUNBOOK.md)](file:///c:/Users/hp/twin/PILOT_RUNBOOK.md)

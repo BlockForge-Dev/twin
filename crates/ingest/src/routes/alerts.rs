@@ -90,9 +90,8 @@ pub async fn acknowledge_alert(
     State(pool): State<PgPool>,
     Path(id_param): Path<String>,
 ) -> Result<impl IntoResponse, AppError> {
-    let alert_id = Uuid::parse_str(id_param.trim()).map_err(|_| {
-        AppError::Validation(format!("invalid alert UUID: {}", id_param))
-    })?;
+    let alert_id = Uuid::parse_str(id_param.trim())
+        .map_err(|_| AppError::Validation(format!("invalid alert UUID: {}", id_param)))?;
 
     let now = chrono::Utc::now();
 

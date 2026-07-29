@@ -33,9 +33,9 @@ pub fn generate_alert_message(
             "Device '{device_id}' reached LOW gas level. Status changed from {} to {}.",
             from_state, to_state
         ),
-        CylinderStatus::Offline => format!(
-            "Device '{device_id}' went OFFLINE. No telemetry received within timeout.",
-        ),
+        CylinderStatus::Offline => {
+            format!("Device '{device_id}' went OFFLINE. No telemetry received within timeout.",)
+        }
         _ => format!(
             "Device '{device_id}' status changed from {} to {}.",
             from_state, to_state

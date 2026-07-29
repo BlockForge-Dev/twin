@@ -6,21 +6,33 @@ use cylindersense_ingest::routes;
 use sqlx::migrate::Migrator;
 use std::path::Path;
 use tower_http::services::ServeDir;
+use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
 async fn main() {
-    // ── Tracing ──────────────────────────────────────────────────────
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| EnvFilter::new("info")),
-        )
-        .init();
-
     // ── Configuration ────────────────────────────────────────────────
-    let config = AppConfig::from_env().expect("failed to load config from environment");
-    tracing::info!(host = %config.host, port = %config.port, "starting CylinderSense ingest service");
+    let config = AppConfig::from_env();
+
+    // ── Tracing & Structured Logging ─────────────────────────────────
+    let env_filter =
+        EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new(&config.log_level));
+
+    if config.log_format.eq_ignore_ascii_case("json") {
+        tracing_subscriber::fmt()
+            .with_env_filter(env_filter)
+            .json()
+            .init();
+    } else {
+        tracing_subscriber::fmt().with_env_filter(env_filter).init();
+    }
+
+    tracing::info!(
+        host = %config.host,
+        port = %config.port,
+        log_format = %config.log_format,
+        "starting CylinderSense ingest service"
+    );
 
     // ── Database ─────────────────────────────────────────────────────
     let pool = db::create_pool(&config.database_url)
@@ -41,7 +53,10 @@ async fn main() {
     // ── Router & Web Service ─────────────────────────────────────────
     let app = Router::new()
         .route("/health", get(routes::health::health_check))
-        .route("/api/v1/telemetry", post(routes::telemetry::ingest_telemetry))
+        .route(
+            "/api/v1/telemetry",
+            post(routes::telemetry::ingest_telemetry),
+        )
         .route(
             "/api/v1/devices",
             post(routes::devices::register_device).get(routes::devices::list_devices),
@@ -66,15 +81,13 @@ async fn main() {
             "/api/v1/devices/{id}/refills",
             get(routes::refills::list_device_refills),
         )
-        .route(
-            "/api/v1/refills/{id}",
-            put(routes::refills::update_refill),
-        )
+        .route("/api/v1/refills/{id}", put(routes::refills::update_refill))
         .route("/api/v1/alerts", get(routes::alerts::list_alerts))
         .route(
             "/api/v1/alerts/{id}/acknowledge",
             post(routes::alerts::acknowledge_alert),
         )
+        .layer(TraceLayer::new_for_http())
         .fallback_service(ServeDir::new("web"))
         .with_state(pool);
 
@@ -83,7 +96,5 @@ async fn main() {
         .await
         .expect("failed to bind TCP listener");
     tracing::info!("listening on http://{}:{}", config.host, config.port);
-    axum::serve(listener, app)
-        .await
-        .expect("server error");
+    axum::serve(listener, app).await.expect("server error");
 }

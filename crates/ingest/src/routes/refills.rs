@@ -118,9 +118,8 @@ pub async fn update_refill(
     Path(id_param): Path<String>,
     Json(payload): Json<UpdateRefillPayload>,
 ) -> Result<impl IntoResponse, AppError> {
-    let refill_id = Uuid::parse_str(id_param.trim()).map_err(|_| {
-        AppError::Validation(format!("invalid refill UUID: {}", id_param))
-    })?;
+    let refill_id = Uuid::parse_str(id_param.trim())
+        .map_err(|_| AppError::Validation(format!("invalid refill UUID: {}", id_param)))?;
 
     let new_fill_grams = payload
         .fill_amount_kg

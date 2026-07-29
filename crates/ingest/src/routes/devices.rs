@@ -4,7 +4,9 @@ use axum::response::IntoResponse;
 use axum::Json;
 use cylindersense_core::error::AppError;
 use cylindersense_core::models::{Device, DeviceStatus};
-use cylindersense_core::payloads::{AssignDevicePayload, ReassignDevicePayload, RegisterDevicePayload};
+use cylindersense_core::payloads::{
+    AssignDevicePayload, ReassignDevicePayload, RegisterDevicePayload,
+};
 use sqlx::PgPool;
 use uuid::Uuid;
 
@@ -95,9 +97,7 @@ pub async fn register_device(
 /// GET /api/v1/devices
 ///
 /// Returns a list of all registered monitoring devices.
-pub async fn list_devices(
-    State(pool): State<PgPool>,
-) -> Result<impl IntoResponse, AppError> {
+pub async fn list_devices(State(pool): State<PgPool>) -> Result<impl IntoResponse, AppError> {
     let records = sqlx::query_as::<_, DeviceRow>(
         r#"
         SELECT id, device_id, model, firmware_version, status, site_id, created_at, updated_at
