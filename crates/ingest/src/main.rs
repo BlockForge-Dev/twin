@@ -3,7 +3,7 @@ mod db;
 mod routes;
 
 use axum::Router;
-use axum::routing::get;
+use axum::routing::{get, post};
 use sqlx::migrate::Migrator;
 use std::path::Path;
 use tracing_subscriber::EnvFilter;
@@ -40,7 +40,8 @@ async fn main() {
 
     // ── Router ───────────────────────────────────────────────────────
     let app = Router::new()
-        .route("/health", get(routes::health::health_check));
+        .route("/health", get(routes::health::health_check))
+        .route("/api/v1/telemetry", post(routes::telemetry::ingest_telemetry));
 
     // ── Server ───────────────────────────────────────────────────────
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))
