@@ -23,7 +23,7 @@ docker compose up -d
 ```bash
 cargo run -p cylindersense-ingest
 ```
-> The backend server will automatically apply database migrations and start listening at `http://localhost:3000`.
+> The backend server will automatically apply database migrations and start listening at `http://localhost:3001`.
 
 ### Step 3: Run Device Simulator
 In a separate terminal:
@@ -33,7 +33,7 @@ cargo run -p cylindersense-simulator
 > The simulator will stream realistic gas depletion telemetry (with noise, spikes, and auto-refills) to the backend.
 
 ### Open Web Dashboard
-Open **`http://localhost:3000`** in your browser to view live cylinder gas levels, alert feeds, and record refills!
+Open **`http://localhost:3001`** in your browser to view live cylinder gas levels, alert feeds, and record refills!
 
 ---
 

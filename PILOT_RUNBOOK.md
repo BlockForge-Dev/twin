@@ -32,7 +32,7 @@ cargo run -p cylindersense-ingest --release
 
 ### Step 3: Verify Health Probe
 ```bash
-curl http://localhost:3000/health
+curl http://localhost:3001/health
 ```
 **Expected Response**:
 ```json
@@ -53,7 +53,7 @@ When deploying a new CylinderSense sensor unit at a pilot site:
 Register the hardware-stamped serial/MAC address via the API or Web Dashboard:
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/devices \
+curl -X POST http://localhost:3001/api/v1/devices \
   -H "Content-Type: application/json" \
   -d '{
     "device_id": "CS-PILOT-101",
@@ -66,7 +66,7 @@ curl -X POST http://localhost:3000/api/v1/devices \
 Assign the device to a customer location (e.g. `bakery-kitchen-1`):
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/devices/CS-PILOT-101/assign \
+curl -X POST http://localhost:3001/api/v1/devices/CS-PILOT-101/assign \
   -H "Content-Type: application/json" \
   -d '{ "site_id": "bakery-kitchen-1" }'
 ```
@@ -75,7 +75,7 @@ curl -X POST http://localhost:3000/api/v1/devices/CS-PILOT-101/assign \
 Anchor the remaining gas calculation with an initial refill record (e.g. 12.5 kg fill):
 
 ```bash
-curl -X POST http://localhost:3000/api/v1/devices/CS-PILOT-101/refill \
+curl -X POST http://localhost:3001/api/v1/devices/CS-PILOT-101/refill \
   -H "Content-Type: application/json" \
   -d '{
     "fill_amount_kg": 12.5,

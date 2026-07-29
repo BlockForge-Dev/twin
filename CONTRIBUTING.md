@@ -14,7 +14,7 @@ The project is organized as a Cargo workspace with decoupled crates:
 | `crates/engine` | Pure mathematical state estimator (`compute_gas_remaining`), outlier rejection, moving average smoothing, and alert transition rules (`should_trigger_alert`). |
 | `crates/ingest` | Axum HTTP server handling telemetry ingestion, REST APIs, database migrations (`migrations/`), and static web dashboard serving (`web/`). |
 | `crates/simulator` | Rust CLI binary generating synthetic LPG depletion telemetry with Gaussian noise, weight spikes, and auto-refills. |
-| `web/` | Vanilla HTML5/CSS3/JS frontend served directly by Axum at `http://localhost:3000`. |
+| `web/` | Vanilla HTML5/CSS3/JS frontend served directly by Axum at `http://localhost:3001`. |
 
 ---
 
@@ -36,7 +36,7 @@ The project is organized as a Cargo workspace with decoupled crates:
    ```
 
 4. **Access Web Dashboard**:
-   Open `http://localhost:3000` in your web browser.
+   Open `http://localhost:3001` in your web browser.
 
 ---
 

@@ -31,7 +31,7 @@ struct Cli {
     interval_secs: u64,
 
     /// URL of the ingest telemetry endpoint.
-    #[arg(long, default_value = "http://localhost:3000/api/v1/telemetry")]
+    #[arg(long, default_value = "http://localhost:3001/api/v1/telemetry")]
     endpoint: String,
 
     /// Standard deviation of Gaussian sensor noise in grams.
