@@ -206,3 +206,12 @@ product generations but must not be attempted in v1:
 | Serialization | serde + serde_json | Standard Rust ecosystem |
 | Observability | tracing + tracing-subscriber | Structured logging with env-filter |
 | Containerization | Docker Compose | Local development database |
+
+---
+
+## 6. Future Architecture Opportunities (v2)
+
+- **WebSocket / SSE Real-Time Streaming (`axum::extract::ws`)**:
+  - Replace the 5-second client-side polling mechanism with full-duplex WebSockets or Server-Sent Events (SSE).
+  - Telemetry ingestion will publish state updates over an in-memory broadcast channel (`tokio::sync::broadcast`), pushing real-time gas level and alert updates to connected web dashboard clients with zero polling latency.
+
