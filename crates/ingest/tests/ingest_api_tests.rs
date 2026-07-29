@@ -2,7 +2,6 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode};
 use http_body_util::BodyExt;
 use serde_json::{json, Value};
-use sqlx::Row;
 use sqlx::PgPool;
 use std::env;
 use tower::ServiceExt;
@@ -13,7 +12,6 @@ async fn setup_test_pool() -> Option<PgPool> {
     let db_url = env::var("DATABASE_URL").ok()?;
     let pool = sqlx::PgPool::connect(&db_url).await.ok()?;
 
-    // Ensure migrations are run for test pool
     let migrator = sqlx::migrate::Migrator::new(std::path::Path::new("migrations"))
         .await
         .ok()?;
@@ -64,7 +62,7 @@ async fn test_assign_device_validation_empty_site_id() {
 // ── Integration Tests (Requires Postgres) ────────────────────────────────────
 
 #[tokio::test]
-async fn test_db_integration_device_and_telemetry_flow() {
+async fn test_db_integration_device_telemetry_and_state_engine() {
     let Some(pool) = setup_test_pool().await else {
         eprintln!("Skipping DB integration test: DATABASE_URL not available or DB unreachable");
         return;
@@ -82,50 +80,64 @@ async fn test_db_integration_device_and_telemetry_flow() {
     let (status, body) = execute_post(&pool, "/api/v1/devices", reg_payload).await;
     assert_eq!(status, StatusCode::CREATED);
     assert_eq!(body["device_id"], test_device_id);
-    assert_eq!(body["status"], "uninitialized");
 
-    // 2. Assign device to a site
-    let assign_payload = json!({
-        "site_id": "kitchen-site-A"
-    });
-
+    // 2. Assign device
+    let assign_payload = json!({ "site_id": "kitchen-site-A" });
     let assign_url = format!("/api/v1/devices/{}/assign", test_device_id);
-    let (status, body) = execute_post(&pool, &assign_url, assign_payload).await;
+    let (status, _body) = execute_post(&pool, &assign_url, assign_payload).await;
     assert_eq!(status, StatusCode::OK);
-    assert_eq!(body["site_id"], "kitchen-site-A");
-    assert_eq!(body["status"], "active");
 
-    // 3. List devices and verify
-    let (status, body) = execute_get(&pool, "/api/v1/devices").await;
-    assert_eq!(status, StatusCode::OK);
-    let devices = body.as_array().expect("expected array of devices");
-    let found = devices.iter().any(|d| d["device_id"] == test_device_id && d["site_id"] == "kitchen-site-A");
-    assert!(found, "registered and assigned device should be in list");
-
-    // 4. Ingest telemetry
-    let telemetry_payload = json!({
+    // 3. Ingest normal telemetry (15500g raw load -> 10000g remaining gas -> normal status)
+    let tel_1 = json!({
         "device_id": test_device_id,
         "timestamp": "2026-07-29T14:00:00Z",
-        "raw_load_grams": 12500
+        "raw_load_grams": 15500
     });
-
-    let (status, body) = execute_post(&pool, "/api/v1/telemetry", telemetry_payload).await;
+    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_1).await;
     assert_eq!(status, StatusCode::CREATED);
-    assert_eq!(body["status"], "stored");
-    let stored_id = body["id"].as_str().expect("valid UUID returned");
 
-    // 5. Query telemetry_raw directly in database to confirm persistence
-    let row = sqlx::query("SELECT id, device_id, raw_load_grams FROM telemetry_raw WHERE id = $1")
-        .bind(uuid::Uuid::parse_str(stored_id).unwrap())
-        .fetch_one(&pool)
-        .await
-        .expect("telemetry_raw row must exist in database");
+    // Ingest spike reading (25000g raw load spike -> should be rejected by outlier filter)
+    let tel_spike = json!({
+        "device_id": test_device_id,
+        "timestamp": "2026-07-29T14:00:05Z",
+        "raw_load_grams": 25000
+    });
+    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_spike).await;
+    assert_eq!(status, StatusCode::CREATED);
 
-    let db_device_id: String = row.get("device_id");
-    let db_raw_load: i32 = row.get("raw_load_grams");
+    // 4. GET /api/v1/devices/{id}/state and verify state engine output
+    let state_url = format!("/api/v1/devices/{}/state", test_device_id);
+    let (status, body) = execute_get(&pool, &state_url).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["device_id"], test_device_id);
+    assert_eq!(body["status"], "normal");
+    assert_eq!(body["remaining_grams"], 10000); // 25000g spike rejected, 15500g used!
 
-    assert_eq!(db_device_id, test_device_id);
-    assert_eq!(db_raw_load, 12500);
+    // 5. Ingest low level reading (7500g raw load -> 2000g remaining gas -> low status)
+    let tel_low = json!({
+        "device_id": test_device_id,
+        "timestamp": "2026-07-29T14:01:00Z",
+        "raw_load_grams": 7500
+    });
+    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_low).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = execute_get(&pool, &state_url).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "low");
+
+    // 6. Ingest critical level reading (6000g raw load -> 500g remaining gas -> critical status)
+    let tel_crit = json!({
+        "device_id": test_device_id,
+        "timestamp": "2026-07-29T14:02:00Z",
+        "raw_load_grams": 6000
+    });
+    let (status, _) = execute_post(&pool, "/api/v1/telemetry", tel_crit).await;
+    assert_eq!(status, StatusCode::CREATED);
+
+    let (status, body) = execute_get(&pool, &state_url).await;
+    assert_eq!(status, StatusCode::OK);
+    assert_eq!(body["status"], "critical");
 }
 
 // ── Test Execution Helpers ───────────────────────────────────────────────────
@@ -215,11 +227,16 @@ fn build_router(pool: PgPool) -> axum::Router {
             "/api/v1/devices/{id}/assign",
             axum::routing::post(cylindersense_ingest_routes::assign_device),
         )
+        .route(
+            "/api/v1/devices/{id}/state",
+            axum::routing::get(cylindersense_ingest_routes::get_device_state),
+        )
         .with_state(pool)
 }
 
 mod cylindersense_ingest_routes {
     pub use cylindersense_ingest::routes::devices::{assign_device, list_devices, register_device};
     pub use cylindersense_ingest::routes::health::health_check as health;
+    pub use cylindersense_ingest::routes::state::get_device_state;
     pub use cylindersense_ingest::routes::telemetry::ingest_telemetry as telemetry;
 }

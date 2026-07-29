@@ -371,7 +371,11 @@ dependencies = [
 name = "cylindersense-engine"
 version = "0.1.0"
 dependencies = [
+ "chrono",
  "cylindersense-core",
+ "serde",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]
@@ -381,6 +385,7 @@ dependencies = [
  "axum",
  "chrono",
  "cylindersense-core",
+ "cylindersense-engine",
  "http-body-util",
  "serde",
  "serde_json",

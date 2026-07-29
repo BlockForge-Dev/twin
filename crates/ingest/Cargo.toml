@@ -15,6 +15,7 @@ path = "src/main.rs"
 
 [dependencies]
 cylindersense-core = { path = "../core" }
+cylindersense-engine = { path = "../engine" }
 axum = { workspace = true }
 tokio = { workspace = true }
 sqlx = { workspace = true }

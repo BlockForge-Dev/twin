@@ -49,6 +49,10 @@ async fn main() {
             "/api/v1/devices/{id}/assign",
             post(routes::devices::assign_device),
         )
+        .route(
+            "/api/v1/devices/{id}/state",
+            get(routes::state::get_device_state),
+        )
         .with_state(pool);
 
     // ── Server ───────────────────────────────────────────────────────
