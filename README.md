@@ -11,7 +11,7 @@ backend service (Rust/Axum + PostgreSQL), and a thin app interface. The
 backend is the brain: it ingests telemetry, estimates remaining gas, and
 triggers low/critical alerts.
 
-> **Current status**: Milestone 5 — Operator Workflows complete (`POST /devices/{id}/refill` recording & state recalculation, `PUT /refills/{id}` edits & auditing, `POST /devices/{id}/reassign`, `GET /devices/{id}/refills` audit history, 18 tests passing).
+> **Current status**: Milestone 6 — Web Dashboard complete (Responsive HTML/CSS/JS web application served directly at `http://localhost:3000`, live cylinder list with big numerical remaining kg and color-coded status badges, modal detail view with refill form & audit history, alert feed with one-click acknowledgement, device registration, and 5s auto-polling, 19 tests passing).
 
 ## Architecture
 

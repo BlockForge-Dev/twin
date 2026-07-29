@@ -5,6 +5,7 @@ use cylindersense_ingest::db;
 use cylindersense_ingest::routes;
 use sqlx::migrate::Migrator;
 use std::path::Path;
+use tower_http::services::ServeDir;
 use tracing_subscriber::EnvFilter;
 
 #[tokio::main]
@@ -37,7 +38,7 @@ async fn main() {
         .expect("failed to run database migrations");
     tracing::info!("database migrations applied");
 
-    // ── Router ───────────────────────────────────────────────────────
+    // ── Router & Web Service ─────────────────────────────────────────
     let app = Router::new()
         .route("/health", get(routes::health::health_check))
         .route("/api/v1/telemetry", post(routes::telemetry::ingest_telemetry))
@@ -74,13 +75,14 @@ async fn main() {
             "/api/v1/alerts/{id}/acknowledge",
             post(routes::alerts::acknowledge_alert),
         )
+        .fallback_service(ServeDir::new("web"))
         .with_state(pool);
 
     // ── Server ───────────────────────────────────────────────────────
     let listener = tokio::net::TcpListener::bind(format!("{}:{}", config.host, config.port))
         .await
         .expect("failed to bind TCP listener");
-    tracing::info!("listening on {}:{}", config.host, config.port);
+    tracing::info!("listening on http://{}:{}", config.host, config.port);
     axum::serve(listener, app)
         .await
         .expect("server error");

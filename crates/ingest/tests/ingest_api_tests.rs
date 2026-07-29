@@ -59,6 +59,22 @@ async fn test_assign_device_validation_empty_site_id() {
     assert!(body["error"].as_str().unwrap().contains("site_id cannot be empty"));
 }
 
+#[tokio::test]
+async fn test_health_check_endpoint() {
+    let pool = dummy_pool().await;
+    let app = build_router(pool);
+
+    let req = Request::builder()
+        .method("GET")
+        .uri("/health")
+        .body(Body::empty())
+        .unwrap();
+
+    let response = app.oneshot(req).await.unwrap();
+    assert_eq!(response.status(), StatusCode::OK);
+}
+
+
 // ── Integration Tests (Requires Postgres) ────────────────────────────────────
 
 #[tokio::test]
@@ -285,6 +301,7 @@ fn build_router(pool: PgPool) -> axum::Router {
             "/api/v1/alerts/{id}/acknowledge",
             axum::routing::post(cylindersense_ingest_routes::acknowledge_alert),
         )
+        .fallback_service(tower_http::services::ServeDir::new("../../web"))
         .with_state(pool)
 }
 

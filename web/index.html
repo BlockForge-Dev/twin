@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CylinderSense — LPG Monitoring Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- Top Navigation Header -->
+  <header class="navbar">
+    <div class="container nav-content">
+      <div class="brand">
+        <div class="logo-icon">🔥</div>
+        <div>
+          <h1 class="brand-name">CylinderSense</h1>
+          <p class="brand-tagline">Commercial LPG Monitoring</p>
+        </div>
+      </div>
+
+      <nav class="nav-links">
+        <button id="nav-cylinders" class="nav-btn active" onclick="switchTab('cylinders')">
+          <span>📦 Cylinders</span>
+          <span id="badge-total-count" class="pill-count">0</span>
+        </button>
+        <button id="nav-alerts" class="nav-btn" onclick="switchTab('alerts')">
+          <span>🔔 Alert Feed</span>
+          <span id="badge-alert-count" class="pill-count alert-pill">0</span>
+        </button>
+        <button id="nav-register" class="nav-btn" onclick="switchTab('register')">
+          <span>➕ Register Device</span>
+        </button>
+      </nav>
+
+      <div class="nav-status">
+        <div class="live-indicator">
+          <span class="pulse-dot"></span>
+          <span id="live-text">Live (5s)</span>
+        </div>
+        <button class="btn-icon" onclick="manualRefresh()" title="Refresh Data">🔄</button>
+      </div>
+    </div>
+  </header>
+
+  <!-- Main Content Container -->
+  <main class="container main-content">
+
+    <!-- Summary Metrics Header Banner -->
+    <section class="summary-grid">
+      <div class="stat-card">
+        <div class="stat-label">Total Monitored</div>
+        <div id="stat-total" class="stat-value">0</div>
+        <div class="stat-sub">Active LPG Cylinders</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Normal Status</div>
+        <div id="stat-normal" class="stat-value text-emerald">0</div>
+        <div class="stat-sub">Adequate Gas</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Low Gas Level</div>
+        <div id="stat-low" class="stat-value text-amber">0</div>
+        <div class="stat-sub">&le; 20% Remaining</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-label">Critical Alerts</div>
+        <div id="stat-critical" class="stat-value text-rose">0</div>
+        <div class="stat-sub">&le; 5% / Action Required</div>
+      </div>
+    </section>
+
+    <!-- Tab 1: Cylinder List View -->
+    <section id="view-cylinders" class="tab-view active">
+      <div class="view-header">
+        <h2>Active Cylinders</h2>
+        <div class="filter-controls">
+          <input type="text" id="search-input" placeholder="Search device ID or site..." oninput="filterCylinders()">
+        </div>
+      </div>
+
+      <div id="cylinder-grid" class="cards-grid">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Connecting to CylinderSense ingest backend...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 2: Alert Feed View -->
+    <section id="view-alerts" class="tab-view">
+      <div class="view-header">
+        <h2>Chronological Alert Feed</h2>
+        <p class="section-desc">State transitions and threshold alerts across all commercial sites.</p>
+      </div>
+
+      <div id="alerts-list" class="alerts-feed">
+        <div class="loading-state">
+          <div class="spinner"></div>
+          <p>Loading alert feed...</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Tab 3: Register Device View -->
+    <section id="view-register" class="tab-view">
+      <div class="view-header">
+        <h2>Register New Monitoring Device</h2>
+        <p class="section-desc">Add a physical CylinderSense load-cell sensor unit to your inventory.</p>
+      </div>
+
+      <div class="form-container">
+        <form id="form-register-device" onsubmit="handleRegisterDevice(event)">
+          <div class="form-group">
+            <label for="reg-device-id">Hardware Device ID *</label>
+            <input type="text" id="reg-device-id" required placeholder="e.g. CS-LPG-104 or MAC address">
+            <small>Hardware-stamped serial number or unique identifier.</small>
+          </div>
+
+          <div class="form-group">
+            <label for="reg-model">Hardware Model</label>
+            <input type="text" id="reg-model" placeholder="e.g. basic_v1">
+          </div>
+
+          <div class="form-group">
+            <label for="reg-firmware">Firmware Version</label>
+            <input type="text" id="reg-firmware" placeholder="e.g. 1.0.4">
+          </div>
+
+          <div class="form-actions">
+            <button type="submit" class="btn btn-primary">Register Device</button>
+          </div>
+          <div id="reg-status-message" class="status-msg"></div>
+        </form>
+      </div>
+    </section>
+
+  </main>
+
+  <!-- Detail & Refill Modal -->
+  <div id="detail-modal" class="modal-backdrop" onclick="closeModalOnBackdrop(event)">
+    <div class="modal-container">
+      <div class="modal-header">
+        <div>
+          <div class="modal-subtitle" id="modal-site-name">Unassigned Site</div>
+          <h2 class="modal-title" id="modal-device-id">Device Details</h2>
+        </div>
+        <button class="modal-close" onclick="closeDetailModal()">&times;</button>
+      </div>
+
+      <div class="modal-body">
+        <!-- Big State Metric Banner -->
+        <div class="modal-metric-card">
+          <div class="metric-main">
+            <div class="metric-big-number">
+              <span id="modal-remaining-kg">0.00</span> <span class="unit">kg</span>
+            </div>
+            <div class="metric-status">
+              <span id="modal-status-badge" class="badge">Unknown</span>
+              <span id="modal-last-seen" class="last-seen">Last seen: --</span>
+            </div>
+          </div>
+          <div class="progress-bar-bg">
+            <div id="modal-progress-fill" class="progress-bar-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- Refill Form Section -->
+        <div class="detail-section">
+          <h3>➕ Record Cylinder Refill</h3>
+          <form id="form-record-refill" onsubmit="handleRecordRefill(event)">
+            <input type="hidden" id="refill-device-id">
+            
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="refill-kg">Refill Amount (kg) *</label>
+                <input type="number" id="refill-kg" step="0.1" min="0.1" required value="12.5">
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="refill-name">Cylinder Name / Label</label>
+                <input type="text" id="refill-name" placeholder="e.g. Tank #1">
+              </div>
+            </div>
+
+            <div class="form-row">
+              <div class="form-group flex-1">
+                <label for="refill-operator">Operator ID / Name</label>
+                <input type="text" id="refill-operator" placeholder="e.g. John Doe">
+              </div>
+
+              <div class="form-group flex-1">
+                <label for="refill-notes">Notes</label>
+                <input type="text" id="refill-notes" placeholder="e.g. Replaced empty 12.5kg cylinder">
+              </div>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-emerald">Submit Refill & Reset Level</button>
+            </div>
+            <div id="refill-status-msg" class="status-msg"></div>
+          </form>
+        </div>
+
+        <!-- Audit History & Device Alerts Split Grid -->
+        <div class="detail-grid">
+          <div class="detail-section">
+            <h3>📋 Refill Audit History</h3>
+            <div id="modal-refill-history" class="history-list">
+              <p class="empty-text">No refills recorded yet.</p>
+            </div>
+          </div>
+
+          <div class="detail-section">
+            <h3>🔔 Device Alert History</h3>
+            <div id="modal-device-alerts" class="history-list">
+              <p class="empty-text">No alerts recorded for this device.</p>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <script src="app.js"></script>
+</body>
+</html>
