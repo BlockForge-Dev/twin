@@ -1,0 +1,11 @@
+[package]
+name = "cylindersense-core"
+version = "0.1.0"
+edition = "2021"
+description = "Shared domain model and types for CylinderSense"
+
+[dependencies]
+serde = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+thiserror = { workspace = true }

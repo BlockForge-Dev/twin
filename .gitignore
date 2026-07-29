@@ -1,0 +1,20 @@
+# Rust build artifacts
+/target/
+/target_build/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Environment
+.env
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Debug
+*.pdb

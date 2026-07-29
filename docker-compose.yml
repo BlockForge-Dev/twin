@@ -1,0 +1,15 @@
+services:
+  postgres:
+    image: postgres:16-alpine
+    container_name: cylindersense-db
+    environment:
+      POSTGRES_USER: cs_dev
+      POSTGRES_PASSWORD: cs_dev_pass
+      POSTGRES_DB: cylindersense
+    ports:
+      - "5432:5432"
+    volumes:
+      - cs_pgdata:/var/lib/postgresql/data
+
+volumes:
+  cs_pgdata:

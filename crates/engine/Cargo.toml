@@ -1,0 +1,8 @@
+[package]
+name = "cylindersense-engine"
+version = "0.1.0"
+edition = "2021"
+description = "State estimation and alert rules for CylinderSense"
+
+[dependencies]
+cylindersense-core = { path = "../core" }

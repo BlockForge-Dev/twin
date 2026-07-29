@@ -1,0 +1,17 @@
+[package]
+name = "cylindersense-ingest"
+version = "0.1.0"
+edition = "2021"
+description = "Axum HTTP service for CylinderSense telemetry ingestion"
+
+[dependencies]
+cylindersense-core = { path = "../core" }
+axum = { workspace = true }
+tokio = { workspace = true }
+sqlx = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+chrono = { workspace = true }
+uuid = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
