@@ -8,6 +8,7 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
+  DATABASE_URL: postgres://cs_dev:cs_dev_pass@127.0.0.1:5432/cylindersense
 
 jobs:
   check-and-test:
@@ -21,13 +22,14 @@ jobs:
           POSTGRES_USER: cs_dev
           POSTGRES_PASSWORD: cs_dev_pass
           POSTGRES_DB: cylindersense
+          POSTGRES_HOST_AUTH_METHOD: trust
         ports:
           - 5432:5432
         options: >-
           --health-cmd pg_isready
-          --health-interval 10s
+          --health-interval 5s
           --health-timeout 5s
-          --health-retries 5
+          --health-retries 10
 
     steps:
       - name: Checkout Code
@@ -41,6 +43,13 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
+      - name: Wait for PostgreSQL
+        run: |
+          until docker exec ${{ job.services.postgres.id }} pg_isready -U cs_dev; do
+            echo "Waiting for PostgreSQL to accept connections..."
+            sleep 1
+          done
+
       - name: Check Formatting (cargo fmt)
         run: cargo fmt --check
 
@@ -48,6 +57,4 @@ jobs:
         run: cargo clippy --workspace -- -D warnings
 
       - name: Run Workspace Tests (cargo test)
-        env:
-          DATABASE_URL: postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense
         run: cargo test --workspace

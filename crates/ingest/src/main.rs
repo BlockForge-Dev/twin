@@ -5,6 +5,7 @@ use cylindersense_ingest::db;
 use cylindersense_ingest::routes;
 use sqlx::migrate::Migrator;
 use std::path::Path;
+use std::process::exit;
 use tower_http::services::ServeDir;
 use tower_http::trace::TraceLayer;
 use tracing_subscriber::EnvFilter;
@@ -35,19 +36,35 @@ async fn main() {
     );
 
     // ── Database ─────────────────────────────────────────────────────
-    let pool = db::create_pool(&config.database_url)
-        .await
-        .expect("failed to connect to database");
+    let pool = match db::create_pool(&config.database_url).await {
+        Ok(p) => p,
+        Err(err) => {
+            eprintln!(
+                "\n❌ DATABASE ERROR: Failed to connect to PostgreSQL at '{}'",
+                config.database_url
+            );
+            eprintln!("   Details: {}\n", err);
+            eprintln!("💡 Quickfix instructions:");
+            eprintln!("   1. Make sure Docker Desktop / Postgres daemon is running.");
+            eprintln!("   2. Re-create the local database volume:");
+            eprintln!("      docker compose down -v");
+            eprintln!("      docker compose up -d");
+            eprintln!("   3. Or set DATABASE_URL to your PostgreSQL connection string:\n");
+            eprintln!("      $env:DATABASE_URL=\"postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense\"\n");
+            exit(1);
+        }
+    };
     tracing::info!("connected to database");
 
     // Run migrations from the `migrations/` directory next to the crate root.
     let migrator = Migrator::new(Path::new("crates/ingest/migrations"))
         .await
         .expect("failed to load migrations");
-    migrator
-        .run(&pool)
-        .await
-        .expect("failed to run database migrations");
+    if let Err(err) = migrator.run(&pool).await {
+        eprintln!("\n❌ MIGRATION ERROR: Failed to execute database migrations.");
+        eprintln!("   Details: {}\n", err);
+        exit(1);
+    }
     tracing::info!("database migrations applied");
 
     // ── Router & Web Service ─────────────────────────────────────────
