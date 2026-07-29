@@ -7,7 +7,7 @@ services:
       POSTGRES_PASSWORD: cs_dev_pass
       POSTGRES_DB: cylindersense
     ports:
-      - "5432:5432"
+      - "5433:5432"
     volumes:
       - cs_pgdata:/var/lib/postgresql/data
 

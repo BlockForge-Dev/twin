@@ -25,7 +25,7 @@ impl AppConfig {
     pub fn from_env() -> Self {
         Self {
             database_url: std::env::var("DATABASE_URL").unwrap_or_else(|_| {
-                "postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense".to_string()
+                "postgres://cs_dev:cs_dev_pass@localhost:5433/cylindersense".to_string()
             }),
             host: std::env::var("HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: std::env::var("PORT")

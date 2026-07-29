@@ -14,7 +14,7 @@ This runbook provides step-by-step procedures for deploying CylinderSense in a p
 Create a `.env` file or export production environment variables:
 
 ```bash
-DATABASE_URL=postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense
+DATABASE_URL=postgres://cs_dev:cs_dev_pass@localhost:5433/cylindersense
 HOST=0.0.0.0
 PORT=3000
 LOG_LEVEL=info

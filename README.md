@@ -82,7 +82,7 @@ Configuration is externalized with sensible defaults:
 
 | Environment Variable | Default Value | Description |
 | :--- | :--- | :--- |
-| `DATABASE_URL` | `postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense` | PostgreSQL connection URL |
+| `DATABASE_URL` | `postgres://cs_dev:cs_dev_pass@localhost:5433/cylindersense` | PostgreSQL connection URL |
 | `HOST` | `0.0.0.0` | Host interface to bind server |
 | `PORT` | `3000` | HTTP port |
 | `LOG_LEVEL` | `info` | Tracing log filter (`info`, `debug`, `trace`) |

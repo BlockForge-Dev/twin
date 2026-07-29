@@ -50,7 +50,7 @@ async fn main() {
             eprintln!("      docker compose down -v");
             eprintln!("      docker compose up -d");
             eprintln!("   3. Or set DATABASE_URL to your PostgreSQL connection string:\n");
-            eprintln!("      $env:DATABASE_URL=\"postgres://cs_dev:cs_dev_pass@localhost:5432/cylindersense\"\n");
+            eprintln!("      $env:DATABASE_URL=\"postgres://cs_dev:cs_dev_pass@localhost:5433/cylindersense\"\n");
             exit(1);
         }
     };
